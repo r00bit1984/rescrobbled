@@ -83,12 +83,15 @@ If the config file doesn't exist, rescrobbled will generate an example config fo
                 <li>artist;</li>
                 <li>song title;</li>
                 <li>album name;</li>
-                <li>zero or more comma-separated (<code>,</code>) genre(s)</li>
+                <li>zero or more comma-separated (<code>,</code>) genre(s);</li>
+                <li>album artist</li>
             </ul>
             </p>
-            <p>The script should write the filtered artist, song title and album name on corresponding lines of its standard output.
+            <p>The script should write the filtered artist, song title, album name and album artist on corresponding lines of its standard output.
             This can be used to clean up song names, for example removing "remastered" and similar suffixes.
-            If the filter script does not return any output, the current track will be ignored.</p>
+            If the filter script does not return any output, the current track will be ignored.
+            The album artist line is optional; if it is missing or empty, the album artist reported by the player is used unchanged,
+            so scripts written before this line existed keep working.</p>
             <p>A number of example scripts can be found in the <a href="https://github.com/InputUsername/rescrobbled/tree/master/filter-script-examples"><code>filter-script-examples</code></a> directory.</p>
         </td>
     </tr>

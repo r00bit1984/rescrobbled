@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- Fixed the album artist not being scrobbled
+  - Previously Last.fm assumed the album artist equalled the track artist, which split compilations,
+    DJ mixes and other various-artists releases into a separate album per track artist
+  - The album artist is read from the player's `xesam:albumArtist` metadata and submitted to Last.fm
+    as `albumArtist` when it differs from the track artist
+  - ListenBrainz is unchanged, as its listen submission API has no album artist field
+- Added the album artist to the filter script interface
+  - It is passed as a fifth input line, after the genres
+  - Scripts can write it as a fourth output line; if that line is missing or empty, the album artist
+    reported by the player is used unchanged
+  - **Note:** filter scripts that read *all* of their standard input and expect exactly four lines
+    (like the bundled Python examples used to) need updating for the extra input line
+- Last.fm scrobbles and status updates are now submitted directly instead of through
+  `rustfm-scrobble-proxy`, which cannot send the `albumArtist` parameter (the crate is still used to
+  log in)
+
 ## v0.10.0 (2026-06-18)
 
 - Added shell expansion (e.g. environment variables, `~`) to secret file resolution

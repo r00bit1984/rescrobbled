@@ -174,7 +174,11 @@ pub fn run(config: Config, services: Vec<Service>) -> Result<()> {
                 current_track.title(),
             );
             if let Some(album) = current_track.album() {
-                println!(" ({album})");
+                print!(" ({album}");
+                if let Some(album_artist) = current_track.album_artist() {
+                    print!(" by {album_artist}");
+                }
+                println!(")");
             }
 
             match filter_metadata(&config, current_track, &metadata) {

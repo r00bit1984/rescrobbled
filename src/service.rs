@@ -20,8 +20,6 @@ use anyhow::{Context, Result, anyhow};
 
 use listenbrainz::ListenBrainz;
 
-use rustfm_scrobble_proxy::{Scrobble, Scrobbler};
-
 mod lastfm;
 
 use crate::config::secrets::Secret;
@@ -30,7 +28,7 @@ use crate::track::Track;
 
 /// Represents a music scrobbling service.
 pub enum Service {
-    LastFM(Scrobbler),
+    LastFM(lastfm::Client),
     ListenBrainz {
         client: ListenBrainz,
         is_default: bool,
@@ -42,12 +40,16 @@ impl Service {
     fn lastfm(config: &Config) -> Result<Option<Self>> {
         match (&config.lastfm_key, &config.lastfm_secret) {
             (Some(key), Some(secret)) => {
-                let mut scrobbler = Scrobbler::new(&key.get()?, &secret.get()?);
+                let (key, secret) = (key.get()?, secret.get()?);
 
-                lastfm::authenticate(&mut scrobbler)
+                let session_key = lastfm::authenticate(&key, &secret)
                     .context("Failed to authenticate with Last.fm")?;
 
-                Ok(Some(Self::LastFM(scrobbler)))
+                Ok(Some(Self::LastFM(lastfm::Client::new(
+                    &key,
+                    &secret,
+                    &session_key,
+                ))))
             }
             (None, None) => Ok(None),
             _ => Err(anyhow!("Last.fm API key or API secret are missing")),
@@ -108,11 +110,9 @@ impl Service {
     /// Submit a "now playing" request.
     pub fn now_playing(&self, track: &Track) -> Result<()> {
         match self {
-            Self::LastFM(scrobbler) => {
-                let scrobble = Scrobble::new(track.artist(), track.title(), track.album());
-
-                scrobbler
-                    .now_playing(&scrobble)
+            Self::LastFM(client) => {
+                client
+                    .now_playing(track)
                     .with_context(|| format!("Failed to update status on {}", self))?;
             }
             Self::ListenBrainz { client, .. } => {
@@ -127,19 +127,17 @@ impl Service {
     /// Scrobble a track.
     pub fn submit(&self, track: &Track, track_start: Option<&SystemTime>) -> Result<()> {
         match self {
-            Self::LastFM(scrobbler) => {
-                let mut scrobble = Scrobble::new(track.artist(), track.title(), track.album());
-
-                if let Some(track_start) = track_start {
-                    let timestamp = track_start
+            Self::LastFM(client) => {
+                let timestamp = match track_start {
+                    Some(track_start) => track_start
                         .duration_since(UNIX_EPOCH)
-                        .context("Track started before UNIX epoch")?;
+                        .context("Track started before UNIX epoch")?
+                        .as_secs(),
+                    None => lastfm::now()?,
+                };
 
-                    scrobble.with_timestamp(timestamp.as_secs());
-                }
-
-                scrobbler
-                    .scrobble(&scrobble)
+                client
+                    .scrobble(track, timestamp)
                     .with_context(|| format!("Failed to submit track to {}", self))?;
             }
             Self::ListenBrainz { client, .. } => {
