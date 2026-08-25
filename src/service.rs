@@ -107,13 +107,6 @@ impl Service {
         services
     }
 
-    /// Whether a track is scrobbled once it has finished playing, timestamped
-    /// with the time it started, instead of as soon as it has been played long
-    /// enough. Only Last.fm takes a timestamp for a scrobble.
-    pub fn scrobbles_at_track_end(&self) -> bool {
-        matches!(self, Self::LastFM(_))
-    }
-
     /// Whether the "now playing" status expires while the track is still
     /// playing, so it has to be renewed to stay visible for the whole track.
     pub fn now_playing_expires(&self) -> bool {
@@ -137,7 +130,8 @@ impl Service {
         Ok(())
     }
 
-    /// Scrobble a track that started playing at `track_start`.
+    /// Scrobble a track that started playing at `track_start`. Only Last.fm
+    /// takes a timestamp; ListenBrainz records the listen at submission time.
     pub fn submit(
         &self,
         track: &Track,
@@ -156,7 +150,6 @@ impl Service {
                     .with_context(|| format!("Failed to submit track to {}", self))?;
             }
             Self::ListenBrainz { client, .. } => {
-                // ListenBrainz listens are recorded at the time they are submitted
                 client
                     .listen(track.artist(), track.title(), track.album())
                     .with_context(|| format!("Failed to submit track to {}", self))?;

@@ -7,16 +7,17 @@
     its duration, or for 4 minutes, whichever occurs earlier
   - Time spent paused no longer counts as play time, and no longer discards the play time a track
     had built up: pausing and resuming continues where the track left off instead of starting it over
-  - Tracks whose player does not report a length are scrobbled after 4 minutes of play, instead of
+  - Tracks whose player does not report a length only count after 4 minutes of play, instead of
     after 15 seconds
-- Changed Last.fm submission to happen when a track has finished playing
-  - The "now playing" status is refreshed while the track keeps playing, so it shows for the whole
-    track instead of expiring partway through
-  - The scrobble is submitted once the track has finished (because it ended, was skipped, or its
-    player was stopped or quit), timestamped with the time and date the track started playing
-  - The track length is submitted along with scrobbles and status updates
-  - ListenBrainz is unaffected: listens are still submitted as soon as a track has been played long
-    enough, and are recorded at the time of submission
+- Changed submission to happen when a track is done playing, instead of partway through it
+  - The play time rules decide whether a track counts as a scrobble, not when it is submitted:
+    scrobbles now go out the moment a track has played all the way through, or, when its play ends
+    early because it was skipped or its player was stopped or quit, at that point
+  - A track shows as "now playing" for as long as it plays; on Last.fm the status is refreshed while
+    it keeps playing, instead of expiring partway through
+  - Last.fm scrobbles are timestamped with the time and date the track started playing; ListenBrainz
+    listens are still recorded at the time they are submitted, as its API takes no timestamp
+  - The track length is submitted along with Last.fm scrobbles and status updates
 - Removed the `use-track-start-timestamp` option (and its `USE_TRACK_START_TIMESTAMP` environment
   variable), which is now what Last.fm scrobbles always do
 - A player that is paused no longer counts as stopped: rescrobbled sticks with it until it is

@@ -59,7 +59,7 @@ If the config file doesn't exist, rescrobbled will generate an example config fo
         <td><code>min-play-time</code></td>
         <td>
             <p>Minimum play time in seconds before a song is scrobbled.</p>
-            <p>By default, track submission respects Last.fm's recommended behavior: songs are only scrobbled if they are longer than 30 seconds and have been playing for at least half their duration, or for 4 minutes, whichever comes first. Using <code>min-play-time</code> you can override the play time that is required; songs of 30 seconds or shorter are never scrobbled.</p>
+            <p>By default, track submission respects Last.fm's recommended behavior: songs only count as a scrobble if they are longer than 30 seconds and have been playing for at least half their duration, or for 4 minutes, whichever comes first. Using <code>min-play-time</code> you can override the play time that is required; songs of 30 seconds or shorter are never scrobbled.</p>
             <p>Time spent paused does not count towards the play time.</p>
         </td>
     </tr>
@@ -144,17 +144,19 @@ systemctl --user start rescrobbled.service
 
 ### When a track is scrobbled
 
-A track is a scrobble when it is longer than 30 seconds and has been played for at least half its
-duration, or for 4 minutes, whichever occurs earlier. Time spent paused does not count towards the
-play time, and a paused track picks up where it left off when playback resumes.
+Scrobbles are submitted when a track is done playing: the moment it has played all the way
+through, or, if its play ends early because it was skipped or its player was stopped or quit, at
+that point. While a track is playing it shows as "now playing" instead; on Last.fm the status is
+refreshed for as long as the track keeps playing.
 
-Last.fm is kept up to date for the whole time a track plays: the "now playing" status is refreshed
-while it keeps playing, and the scrobble is submitted once the track has finished playing (because
-it ended, was skipped, or its player was stopped or quit), timestamped with the time and date the
-track started playing.
+Whether a finished track counts as a scrobble at all is a separate question: it has to be longer
+than 30 seconds and have been played for at least half its duration, or for 4 minutes, whichever
+occurs earlier. Time spent paused does not count towards the play time, and a paused track picks up
+where it left off when playback resumes.
 
-ListenBrainz listens are submitted as soon as the track has been played long enough, and are
-recorded at the time of submission, because the listen submission API takes no timestamp.
+Last.fm scrobbles are timestamped with the time and date the track started playing. ListenBrainz
+listens are recorded at the time they are submitted, because the listen submission API takes no
+timestamp.
 
 ## Project resources
 

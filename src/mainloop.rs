@@ -58,8 +58,7 @@ struct Playing {
     timer: Instant,
     /// When the "now playing" status was last updated.
     status_updated: Instant,
-    /// Whether the services that scrobble as soon as a track has been played
-    /// long enough have received it.
+    /// Whether the track has been scrobbled already.
     submitted: bool,
 }
 
@@ -73,6 +72,17 @@ impl Playing {
     /// Skip the time since the previous poll, which was spent paused.
     fn hold(&mut self) {
         self.timer = Instant::now();
+    }
+
+    /// Whether the track played all the way through.
+    ///
+    /// The play time lags the position by up to one poll, so a track within a
+    /// poll of its length counts as having played completely. That keeps the
+    /// last track of a queue from going unscrobbled when its player pauses on
+    /// the final moment instead of moving on.
+    fn played_completely(&self) -> bool {
+        self.length
+            .is_some_and(|length| self.play_time + POLL_INTERVAL >= length)
     }
 
     /// Whether the track played past its length, so it must have started over.
@@ -189,9 +199,13 @@ fn refresh_now_playing(services: &[Service], playing: &mut Playing) {
     }
 }
 
-/// Submit a track to the services that scrobble it as soon as it has been
-/// played long enough.
-fn submit_when_played(config: &Config, services: &[Service], playing: &mut Playing) {
+/// Scrobble a track whose play has come to an end, timestamped with the time
+/// and date it started playing.
+///
+/// This is where every scrobble is submitted: a track that played completely is
+/// submitted the moment it did, and one whose play ended early when it is done
+/// playing. Whether it counts as a scrobble at all is up to [`should_scrobble`].
+fn submit_track(config: &Config, services: &[Service], playing: &mut Playing) {
     if playing.submitted || !should_scrobble(config, playing.length, playing.play_time) {
         return;
     }
@@ -202,32 +216,7 @@ fn submit_when_played(config: &Config, services: &[Service], playing: &mut Playi
         return;
     };
 
-    for service in services
-        .iter()
-        .filter(|service| !service.scrobbles_at_track_end())
-    {
-        match service.submit(track, playing.start, playing.length) {
-            Ok(()) => println!("Track submitted to {} successfully", service),
-            Err(err) => eprintln!("{:?}", err),
-        }
-    }
-}
-
-/// Submit a track that has finished playing to the services that wait for it,
-/// timestamped with the time and date the track started playing.
-fn finish_track(config: &Config, services: &[Service], playing: Playing) {
-    if !should_scrobble(config, playing.length, playing.play_time) {
-        return;
-    }
-
-    let Some(track) = playing.submission.as_ref() else {
-        return;
-    };
-
-    for service in services
-        .iter()
-        .filter(|service| service.scrobbles_at_track_end())
-    {
+    for service in services.iter() {
         match service.submit(track, playing.start, playing.length) {
             Ok(()) => println!("Track submitted to {} successfully", service),
             Err(err) => eprintln!("{:?}", err),
@@ -250,9 +239,9 @@ pub fn run(config: Config, services: Vec<Service>) -> Result<()> {
 
     loop {
         if !player.is_running() {
-            // The track cannot be resumed, so it ends here
-            if let Some(track) = playing.take() {
-                finish_track(&config, &services, track);
+            // The track cannot be resumed, so its play ends here
+            if let Some(mut track) = playing.take() {
+                submit_track(&config, &services, &mut track);
             }
 
             println!(
@@ -290,8 +279,8 @@ pub fn run(config: Config, services: Vec<Service>) -> Result<()> {
                 .filter(|other| other.bus_name() != player.bus_name());
 
             if status == PlaybackStatus::Stopped || takeover.is_some() {
-                if let Some(track) = playing.take() {
-                    finish_track(&config, &services, track);
+                if let Some(mut track) = playing.take() {
+                    submit_track(&config, &services, &mut track);
                 }
             } else if let Some(track) = playing.as_mut() {
                 track.hold();
@@ -336,21 +325,29 @@ pub fn run(config: Config, services: Vec<Service>) -> Result<()> {
             Some(track) if track.track != current_track => true,
             Some(track) => {
                 track.tick();
-                // The track played all the way through and started over
+
+                // A track that has played completely is a scrobble there and
+                // then, however long the player stays on it
+                if track.played_completely() {
+                    submit_track(&config, &services, track);
+                }
+
+                // The track played past its length, so it started over
                 track.started_over()
             }
             None => false,
         };
 
-        if ended && let Some(track) = playing.take() {
-            finish_track(&config, &services, track);
+        // The play ended before the track was over; it is still a scrobble if
+        // it was played long enough
+        if ended && let Some(mut track) = playing.take() {
+            submit_track(&config, &services, &mut track);
         }
 
         let playing = playing.get_or_insert_with(|| {
             start_track(&config, &services, current_track, &metadata, length)
         });
 
-        submit_when_played(&config, &services, playing);
         refresh_now_playing(&services, playing);
 
         thread::sleep(POLL_INTERVAL);
@@ -362,6 +359,53 @@ mod tests {
     use super::*;
 
     const SECOND: Duration = Duration::from_secs(1);
+
+    fn playing(length: Option<Duration>, play_time: Duration) -> Playing {
+        let now = Instant::now();
+
+        Playing {
+            track: Track::default(),
+            submission: None,
+            length,
+            start: SystemTime::now(),
+            play_time,
+            timer: now,
+            status_updated: now,
+            submitted: false,
+        }
+    }
+
+    #[test]
+    fn test_played_completely() {
+        let length = Duration::from_secs(3 * 60);
+
+        // A track counts as played completely once its play time is within a
+        // poll of its length, so that a player pausing on the last moment of a
+        // track does not leave it unscrobbled
+
+        assert!(!playing(Some(length), length / 2).played_completely());
+        assert!(!playing(Some(length), length - POLL_INTERVAL - SECOND).played_completely());
+        assert!(playing(Some(length), length - POLL_INTERVAL).played_completely());
+        assert!(playing(Some(length), length).played_completely());
+
+        // A track without a length never does, however long it plays
+
+        assert!(!playing(None, Duration::from_secs(60 * 60)).played_completely());
+    }
+
+    #[test]
+    fn test_started_over() {
+        let length = Duration::from_secs(3 * 60);
+
+        // A track that played out is not taken for a repeat right away, only
+        // once it keeps playing well past its length
+
+        assert!(!playing(Some(length), length).started_over());
+        assert!(!playing(Some(length), length + RESTART_GRACE - SECOND).started_over());
+        assert!(playing(Some(length), length + RESTART_GRACE).started_over());
+
+        assert!(!playing(None, Duration::from_secs(60 * 60)).started_over());
+    }
 
     #[test]
     fn test_should_scrobble_short_track() {
