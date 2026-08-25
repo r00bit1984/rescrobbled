@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::fmt::{self, Write};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow};
 
@@ -107,12 +107,25 @@ impl Service {
         services
     }
 
+    /// Whether a track is scrobbled once it has finished playing, timestamped
+    /// with the time it started, instead of as soon as it has been played long
+    /// enough. Only Last.fm takes a timestamp for a scrobble.
+    pub fn scrobbles_at_track_end(&self) -> bool {
+        matches!(self, Self::LastFM(_))
+    }
+
+    /// Whether the "now playing" status expires while the track is still
+    /// playing, so it has to be renewed to stay visible for the whole track.
+    pub fn now_playing_expires(&self) -> bool {
+        matches!(self, Self::LastFM(_))
+    }
+
     /// Submit a "now playing" request.
-    pub fn now_playing(&self, track: &Track) -> Result<()> {
+    pub fn now_playing(&self, track: &Track, length: Option<Duration>) -> Result<()> {
         match self {
             Self::LastFM(client) => {
                 client
-                    .now_playing(track)
+                    .now_playing(track, length)
                     .with_context(|| format!("Failed to update status on {}", self))?;
             }
             Self::ListenBrainz { client, .. } => {
@@ -124,23 +137,26 @@ impl Service {
         Ok(())
     }
 
-    /// Scrobble a track.
-    pub fn submit(&self, track: &Track, track_start: Option<&SystemTime>) -> Result<()> {
+    /// Scrobble a track that started playing at `track_start`.
+    pub fn submit(
+        &self,
+        track: &Track,
+        track_start: SystemTime,
+        length: Option<Duration>,
+    ) -> Result<()> {
         match self {
             Self::LastFM(client) => {
-                let timestamp = match track_start {
-                    Some(track_start) => track_start
-                        .duration_since(UNIX_EPOCH)
-                        .context("Track started before UNIX epoch")?
-                        .as_secs(),
-                    None => lastfm::now()?,
-                };
+                let timestamp = track_start
+                    .duration_since(UNIX_EPOCH)
+                    .context("Track started before UNIX epoch")?
+                    .as_secs();
 
                 client
-                    .scrobble(track, timestamp)
+                    .scrobble(track, timestamp, length)
                     .with_context(|| format!("Failed to submit track to {}", self))?;
             }
             Self::ListenBrainz { client, .. } => {
+                // ListenBrainz listens are recorded at the time they are submitted
                 client
                     .listen(track.artist(), track.title(), track.album())
                     .with_context(|| format!("Failed to submit track to {}", self))?;

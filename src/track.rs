@@ -20,7 +20,7 @@ fn non_empty(value: Option<&str>) -> Option<String> {
     value.filter(|value| !value.is_empty()).map(str::to_owned)
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Track {
     artist: String,
     title: String,
@@ -59,20 +59,6 @@ impl Track {
     pub fn with_album_artist(mut self, album_artist: Option<&str>) -> Self {
         self.album_artist = non_empty(album_artist);
         self
-    }
-
-    pub fn clear(&mut self) {
-        self.artist.clear();
-        self.title.clear();
-        self.album.take();
-        self.album_artist.take();
-    }
-
-    pub fn clone_from(&mut self, other: &Self) {
-        self.artist.clone_from(&other.artist);
-        self.title.clone_from(&other.title);
-        self.album.clone_from(&other.album);
-        self.album_artist.clone_from(&other.album_artist);
     }
 
     pub fn from_metadata(metadata: &Metadata) -> Self {

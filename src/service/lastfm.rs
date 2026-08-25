@@ -15,7 +15,7 @@
 use std::fs::{self, Permissions};
 use std::io::{self, Write};
 use std::os::unix::fs::PermissionsExt;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 
@@ -101,13 +101,17 @@ impl Client {
     }
 
     /// Submit a "now playing" request for a track.
-    pub fn now_playing(&self, track: &Track) -> Result<()> {
-        self.request("track.updateNowPlaying", track_params(track))
+    ///
+    /// Last.fm keeps the status up for the length of the track when it is known,
+    /// so the length is submitted along with it.
+    pub fn now_playing(&self, track: &Track, length: Option<Duration>) -> Result<()> {
+        self.request("track.updateNowPlaying", track_params(track, length))
     }
 
-    /// Scrobble a track, played at `timestamp` seconds since the UNIX epoch.
-    pub fn scrobble(&self, track: &Track, timestamp: u64) -> Result<()> {
-        let mut params = track_params(track);
+    /// Scrobble a track that started playing at `timestamp` seconds since the
+    /// UNIX epoch.
+    pub fn scrobble(&self, track: &Track, timestamp: u64, length: Option<Duration>) -> Result<()> {
+        let mut params = track_params(track, length);
         params.push(("timestamp", timestamp.to_string()));
 
         self.request("track.scrobble", params)
@@ -142,7 +146,7 @@ impl Client {
 }
 
 /// Build the track metadata parameters shared by scrobbles and status updates.
-fn track_params(track: &Track) -> Vec<(&'static str, String)> {
+fn track_params(track: &Track, length: Option<Duration>) -> Vec<(&'static str, String)> {
     let mut params = vec![
         ("artist", track.artist().to_owned()),
         ("track", track.title().to_owned()),
@@ -155,6 +159,10 @@ fn track_params(track: &Track) -> Vec<(&'static str, String)> {
     // Last.fm only wants `albumArtist` when it differs from the track artist
     if let Some(album_artist) = track.album_artist().filter(|a| *a != track.artist()) {
         params.push(("albumArtist", album_artist.to_owned()));
+    }
+
+    if let Some(length) = length {
+        params.push(("duration", length.as_secs().to_string()));
     }
 
     params
@@ -174,14 +182,6 @@ fn signature(params: &[(&str, String)], api_secret: &str) -> String {
     sig.push_str(api_secret);
 
     format!("{:x}", md5::compute(sig))
-}
-
-/// The current time in seconds since the UNIX epoch.
-pub fn now() -> Result<u64> {
-    Ok(SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .context("Current time is before the UNIX epoch")?
-        .as_secs())
 }
 
 #[cfg(test)]
@@ -205,12 +205,12 @@ mod tests {
 
     #[test]
     fn test_track_params() {
-        // A track without an album or album artist only submits artist and title
+        // A track without an album, album artist or length only submits artist and title
 
         let track = Track::new("Dimension", "Psycho", None);
 
         assert_eq!(
-            track_params(&track),
+            track_params(&track, None),
             vec![
                 ("artist", "Dimension".to_owned()),
                 ("track", "Psycho".to_owned()),
@@ -223,7 +223,7 @@ mod tests {
             .with_album_artist(Some("Kruder & Dorfmeister"));
 
         assert_eq!(
-            track_params(&track),
+            track_params(&track, None),
             vec![
                 ("artist", "The Herbaliser".to_owned()),
                 ("track", "Wall Crawling".to_owned()),
@@ -238,11 +238,24 @@ mod tests {
             .with_album_artist(Some("Men At Work"));
 
         assert_eq!(
-            track_params(&track),
+            track_params(&track, None),
             vec![
                 ("artist", "Men At Work".to_owned()),
                 ("track", "Down Under".to_owned()),
                 ("album", "Business As Usual".to_owned()),
+            ]
+        );
+
+        // A known track length is submitted as the duration, in seconds
+
+        let track = Track::new("Dimension", "Psycho", None);
+
+        assert_eq!(
+            track_params(&track, Some(Duration::from_millis(215_500))),
+            vec![
+                ("artist", "Dimension".to_owned()),
+                ("track", "Psycho".to_owned()),
+                ("duration", "215".to_owned()),
             ]
         );
     }

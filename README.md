@@ -31,7 +31,6 @@ min-play-time = 0
 player-whitelist = [ "Player MPRIS identity or bus name", "regex.*" ]
 player-ignorelist = [ "name", "regex.*" ]
 filter-script = "path/to/script"
-use-track-start-timestamp = false
 
 [[listenbrainz]]
 url = "Custom API URL"
@@ -60,7 +59,8 @@ If the config file doesn't exist, rescrobbled will generate an example config fo
         <td><code>min-play-time</code></td>
         <td>
             <p>Minimum play time in seconds before a song is scrobbled.</p>
-            <p>By default, track submission respects Last.fm's recommended behavior: songs should only be scrobbled if they have been playing for at least half their duration, or for 4 minutes, whichever comes first. Using <code>min-play-time</code> you can override this.</p>
+            <p>By default, track submission respects Last.fm's recommended behavior: songs are only scrobbled if they are longer than 30 seconds and have been playing for at least half their duration, or for 4 minutes, whichever comes first. Using <code>min-play-time</code> you can override the play time that is required; songs of 30 seconds or shorter are never scrobbled.</p>
+            <p>Time spent paused does not count towards the play time.</p>
         </td>
     </tr>
     <tr>
@@ -96,10 +96,6 @@ If the config file doesn't exist, rescrobbled will generate an example config fo
         </td>
     </tr>
     <tr>
-        <td><code>use-track-start-timestamp</code></td>
-        <td>By default, tracks are submitted with a timestamp of the submission time. By setting <code>use-track-start-timestamp</code> to <code>true</code>, tracks are instead submitted with the time the track originally started playing. This is currently Last.fm-only.</td>
-    </tr>
-    <tr>
         <td><code>[[listenbrainz]]</code></td>
         <td>
             <p>You can specify one or more ListenBrainz instances by repeating this option. Each definition needs at least a <code>token</code>. You can set <code>url</code> to use a custom API URL (eg. for use with custom ListenBrainz instances or services like <a href="https://github.com/krateng/maloja">Maloja</a>). If the URL is not provided, it defaults to the ListenBrainz.org instance.</p>
@@ -122,7 +118,6 @@ Some options can be set using environment variables. The following options are s
 | `listenbrainz-token` | `LISTENBRAINZ_TOKEN` |
 | `min-play-time` | `MIN_PLAY_TIME` |
 | `filter-script` | `FILTER_SCRIPT` |
-| `use-track-start-timestamp` | `USE_TRACK_START_TIMESTAMP` |
 
 ### Loading secrets from files
 
@@ -146,6 +141,20 @@ You can run it in the current session using:
 ```
 systemctl --user start rescrobbled.service
 ```
+
+### When a track is scrobbled
+
+A track is a scrobble when it is longer than 30 seconds and has been played for at least half its
+duration, or for 4 minutes, whichever occurs earlier. Time spent paused does not count towards the
+play time, and a paused track picks up where it left off when playback resumes.
+
+Last.fm is kept up to date for the whole time a track plays: the "now playing" status is refreshed
+while it keeps playing, and the scrobble is submitted once the track has finished playing (because
+it ended, was skipped, or its player was stopped or quit), timestamped with the time and date the
+track started playing.
+
+ListenBrainz listens are submitted as soon as the track has been played long enough, and are
+recorded at the time of submission, because the listen submission API takes no timestamp.
 
 ## Project resources
 
